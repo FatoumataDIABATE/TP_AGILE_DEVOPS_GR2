@@ -9,6 +9,6 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "pg": "^8.13.3"
+    "better-sqlite3": "^11.10.0"
   }
 }
