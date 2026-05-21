@@ -1,9 +1,58 @@
 import cors from 'cors'
 import express from 'express'
-import { pool } from './db.js'
+import { db } from './db.js'
 
 const port = Number(process.env.PORT ?? 3001)
 const app = express()
+const listEvents = db.prepare(`
+  SELECT
+    e.id,
+    e.title,
+    e.description,
+    e.starts_at,
+    e.location,
+    e.category,
+    e.created_at,
+    COALESCE(r.registrations_count, 0) AS registrations_count
+  FROM events AS e
+  LEFT JOIN (
+    SELECT event_id, COUNT(*) AS registrations_count
+    FROM registrations
+    GROUP BY event_id
+  ) AS r ON r.event_id = e.id
+  ORDER BY e.starts_at ASC
+`)
+const getEventById = db.prepare(`
+  SELECT
+    e.id,
+    e.title,
+    e.description,
+    e.starts_at,
+    e.location,
+    e.category,
+    e.created_at,
+    COALESCE(r.registrations_count, 0) AS registrations_count
+  FROM events AS e
+  LEFT JOIN (
+    SELECT event_id, COUNT(*) AS registrations_count
+    FROM registrations
+    GROUP BY event_id
+  ) AS r ON r.event_id = e.id
+  WHERE e.id = ?
+`)
+const insertEvent = db.prepare(`
+  INSERT INTO events (title, description, starts_at, location, category)
+  VALUES (?, ?, ?, ?, ?)
+`)
+const insertRegistration = db.prepare(`
+  INSERT INTO registrations (event_id, full_name, email)
+  VALUES (?, ?, ?)
+`)
+const getRegistrationById = db.prepare(`
+  SELECT id, event_id, full_name, email, created_at
+  FROM registrations
+  WHERE id = ?
+`)
 
 app.use(cors())
 app.use(express.json())
@@ -17,21 +66,17 @@ function mapEvent(row) {
     location: row.location,
     category: row.category,
     createdAt: row.created_at,
+    registrationsCount: Number(row.registrations_count ?? 0),
   }
 }
 
-async function waitForDatabase(retries = 10) {
-  for (let attempt = 1; attempt <= retries; attempt += 1) {
-    try {
-      await pool.query('SELECT 1')
-      return
-    } catch (error) {
-      if (attempt === retries) {
-        throw error
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-    }
+function mapRegistration(row) {
+  return {
+    id: row.id,
+    eventId: row.event_id,
+    fullName: row.full_name,
+    email: row.email,
+    createdAt: row.created_at,
   }
 }
 
@@ -41,15 +86,7 @@ app.get('/api/health', (_request, response) => {
 
 app.get('/api/events', async (_request, response) => {
   try {
-    const result = await pool.query(
-      `
-        SELECT id, title, description, starts_at, location, category, created_at
-        FROM events
-        ORDER BY starts_at ASC
-      `,
-    )
-
-    response.json(result.rows.map(mapEvent))
+    response.json(listEvents.all().map(mapEvent))
   } catch (error) {
     response.status(500).json({ error: 'Impossible de lire les événements' })
   }
@@ -69,24 +106,47 @@ app.post('/api/events', async (request, response) => {
   }
 
   try {
-    const result = await pool.query(
-      `
-        INSERT INTO events (title, description, starts_at, location, category)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, title, description, starts_at, location, category, created_at
-      `,
-      [title, description, startsAtDate.toISOString(), location, category],
-    )
+    const result = insertEvent.run(title, description, startsAtDate.toISOString(), location, category)
+    const createdEvent = getEventById.get(result.lastInsertRowid)
 
-    response.status(201).json(mapEvent(result.rows[0]))
+    response.status(201).json(mapEvent(createdEvent))
   } catch (error) {
     response.status(500).json({ error: 'Impossible de créer l’événement' })
   }
 })
 
-async function startServer() {
-  await waitForDatabase()
+app.post('/api/registrations', async (request, response) => {
+  const { eventId, fullName, email } = request.body ?? {}
 
+  if (!eventId || !fullName || !email) {
+    return response.status(400).json({ error: 'Tous les champs sont obligatoires' })
+  }
+
+  const event = getEventById.get(Number(eventId))
+
+  if (!event) {
+    return response.status(404).json({ error: 'Événement introuvable' })
+  }
+
+  try {
+    const result = insertRegistration.run(Number(eventId), fullName, email.toLowerCase().trim())
+    const createdRegistration = getRegistrationById.get(result.lastInsertRowid)
+    const updatedEvent = getEventById.get(Number(eventId))
+
+    response.status(201).json({
+      registration: mapRegistration(createdRegistration),
+      event: mapEvent(updatedEvent),
+    })
+  } catch (error) {
+    if (String(error?.message ?? '').includes('UNIQUE')) {
+      return response.status(409).json({ error: 'Cette adresse email est déjà inscrite à cet événement' })
+    }
+
+    response.status(500).json({ error: 'Impossible d’enregistrer l’inscription' })
+  }
+})
+
+async function startServer() {
   app.listen(port, () => {
     console.log(`Events API listening on http://localhost:${port}`)
   })

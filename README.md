@@ -19,7 +19,7 @@ If you are developing a production application, we recommend updating the config
 export default defineConfig([
   # TP_AGILE_DEVOPS_GR2
 
-  Application React/Vite dockerisée avec une API Node/Express et une base PostgreSQL pour stocker des événements.
+  Application React/Vite dockerisée avec une API Node/Express et une base SQLite locale pour stocker des événements.
 
   ## Lancer avec Docker
 
@@ -32,7 +32,7 @@ export default defineConfig([
   ## Structure
 
   - `src/`: interface React
-  - `backend/`: API d’événements et schéma PostgreSQL
+  - `backend/`: API d’événements et schéma SQLite
   - `docker-compose.yml`: orchestration de l’ensemble
 
   ## Démarrage local

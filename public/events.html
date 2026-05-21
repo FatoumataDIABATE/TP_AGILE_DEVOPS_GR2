@@ -3,86 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Événements — Liste</title>
-    <link rel="stylesheet" href="/src/App.css" />
+    <meta http-equiv="refresh" content="0; url=/" />
+    <title>Redirection vers la page d’accueil</title>
   </head>
   <body>
-    <main class="app-shell">
-      <section class="panel">
-        <div class="section-heading">
-          <span class="eyebrow">Visiteur</span>
-          <h1>Événements à venir</h1>
-        </div>
-
-        <p class="muted">Chargement des événements en cours…</p>
-
-        <div id="events" class="event-list"></div>
-      </section>
-    </main>
-
+    <p>Redirection vers la page d’accueil…</p>
     <script>
-      (function () {
-        const container = document.getElementById('events')
-        const muted = document.querySelector('.muted')
-
-        const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:3001' : ''
-
-        function formatDate(d) {
-          try {
-            return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'full', timeStyle: 'short' }).format(new Date(d))
-          } catch (e) {
-            return d
-          }
-        }
-
-        async function load() {
-          try {
-            const res = await fetch(`${apiBase}/api/events`)
-            if (!res.ok) throw new Error('Impossible de charger les événements')
-            const events = await res.json()
-
-            if (muted) muted.remove()
-
-            if (!events || events.length === 0) {
-              container.innerHTML = '<p class="muted">Aucun événement à venir.</p>'
-              return
-            }
-
-            container.innerHTML = events
-              .map(function (ev) {
-                return `
-                  <article class="event-card">
-                    <div class="event-card__header">
-                      <span>${ev.category}</span>
-                      <strong>${formatDate(ev.startsAt)}</strong>
-                    </div>
-                    <h3>${escapeHtml(ev.title)}</h3>
-                    <p>${escapeHtml(ev.description)}</p>
-                    <footer>
-                      <span>${escapeHtml(ev.location)}</span>
-                      <small>Ajouté le ${formatDate(ev.createdAt)}</small>
-                    </footer>
-                  </article>
-                `
-              })
-              .join('\n')
-          } catch (err) {
-            if (muted) muted.textContent = err instanceof Error ? err.message : 'Erreur lors du chargement'
-          }
-        }
-
-        function escapeHtml(str) {
-          if (!str) return ''
-          return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;')
-        }
-
-        load()
-      })()
+      window.location.replace('/')
     </script>
   </body>
 </html>

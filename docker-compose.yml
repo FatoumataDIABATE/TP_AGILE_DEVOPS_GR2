@@ -1,34 +1,15 @@
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: eventsdb
-      POSTGRES_USER: events
-      POSTGRES_PASSWORD: events
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - '5432:5432'
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U events -d eventsdb']
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   api:
     build:
       context: ./backend
     restart: unless-stopped
     environment:
       PORT: 3001
-      DATABASE_URL: postgres://events:events@db:5432/eventsdb
+      SQLITE_PATH: /app/data/events.db
     ports:
       - '3001:3001'
-    depends_on:
-      db:
-        condition: service_healthy
+    volumes:
+      - sqlite_data:/app/data
 
   web:
     build:
@@ -42,4 +23,4 @@ services:
       - api
 
 volumes:
-  postgres_data:
+  sqlite_data:
