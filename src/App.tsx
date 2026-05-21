@@ -130,6 +130,9 @@ function App() {
             L’application lit et crée des événements via une API Node connectée à
             une base PostgreSQL, le tout orchestré avec Docker Compose.
           </p>
+          <p>
+            <a href="/events.html" className="secondary-button">Voir la liste complète des événements</a>
+          </p>
           <div className="hero-stats">
             <article>
               <strong>{events.length}</strong>
