@@ -1,5 +1,6 @@
 import cors from 'cors'
 import express from 'express'
+import { createHash } from 'node:crypto'
 import { db } from './db.js'
 
 const port = Number(process.env.PORT ?? 3001)
@@ -69,6 +70,53 @@ const listRegistrationsByEventId = db.prepare(`
   ORDER BY created_at ASC, id ASC
 `)
 
+const getAdminByEmail = db.prepare(`
+  SELECT id, email, password_hash
+  FROM administrators
+  WHERE email = ?
+`)
+
+function hashPassword(password) {
+  return createHash('sha256').update(String(password)).digest('hex')
+}
+
+function createAuthToken(email, passwordHash) {
+  return Buffer.from(`${email}:${passwordHash}`).toString('base64')
+}
+
+function parseAuthToken(token) {
+  try {
+    const decoded = Buffer.from(token, 'base64').toString('utf8')
+    const [email, passwordHash] = decoded.split(':')
+    return { email, passwordHash }
+  } catch {
+    return null
+  }
+}
+
+function requireAdmin(request, response, next) {
+  const header = request.header('Authorization')
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : null
+
+  if (!token) {
+    return response.status(401).json({ error: 'Authentification requise' })
+  }
+
+  const payload = parseAuthToken(token)
+
+  if (!payload?.email || !payload?.passwordHash) {
+    return response.status(401).json({ error: 'Authentification invalide' })
+  }
+
+  const admin = getAdminByEmail.get(payload.email.toLowerCase())
+
+  if (!admin || admin.password_hash !== payload.passwordHash) {
+    return response.status(401).json({ error: 'Authentification invalide' })
+  }
+
+  next()
+}
+
 app.use(cors())
 app.use(express.json())
 
@@ -99,6 +147,23 @@ app.get('/api/health', (_request, response) => {
   response.json({ status: 'ok' })
 })
 
+app.post('/api/auth/login', async (request, response) => {
+  const { email, password } = request.body ?? {}
+
+  if (!email || !password) {
+    return response.status(400).json({ error: 'Email et mot de passe requis' })
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase()
+  const admin = getAdminByEmail.get(normalizedEmail)
+
+  if (!admin || hashPassword(password) !== admin.password_hash) {
+    return response.status(401).json({ error: 'Identifiants invalides' })
+  }
+
+  response.json({ token: createAuthToken(normalizedEmail, admin.password_hash) })
+})
+
 app.get('/api/events', async (_request, response) => {
   try {
     response.json(listEvents.all().map(mapEvent))
@@ -107,7 +172,7 @@ app.get('/api/events', async (_request, response) => {
   }
 })
 
-app.post('/api/events', async (request, response) => {
+app.post('/api/events', requireAdmin, async (request, response) => {
   const { title, description, startsAt, location, category } = request.body ?? {}
 
   if (!title || !description || !startsAt || !location || !category) {
@@ -130,7 +195,7 @@ app.post('/api/events', async (request, response) => {
   }
 })
 
-app.put('/api/events/:id', async (request, response) => {
+app.put('/api/events/:id', requireAdmin, async (request, response) => {
   const eventId = Number(request.params.id)
 
   if (!Number.isInteger(eventId) || eventId <= 0) {
@@ -165,7 +230,7 @@ app.put('/api/events/:id', async (request, response) => {
   }
 })
 
-app.delete('/api/events/:id', async (request, response) => {
+app.delete('/api/events/:id', requireAdmin, async (request, response) => {
   const eventId = Number(request.params.id)
 
   if (!Number.isInteger(eventId) || eventId <= 0) {
@@ -186,7 +251,7 @@ app.delete('/api/events/:id', async (request, response) => {
   }
 })
 
-app.get('/api/events/:id/registrations', async (request, response) => {
+app.get('/api/events/:id/registrations', requireAdmin, async (request, response) => {
   const eventId = Number(request.params.id)
 
   if (!Number.isInteger(eventId) || eventId <= 0) {
