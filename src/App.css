@@ -361,6 +361,27 @@
   outline-offset: 2px;
 }
 
+.search-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 16px 0;
+}
+
+.search-controls input[type="date"],
+.search-controls input[type="text"],
+.search-controls input {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(4,8,20,0.65);
+  color: #f8fafc;
+}
+
+.search-controls button.secondary-button {
+  margin-top: 0;
+}
+
 @media (max-width: 980px) {
   .hero-panel,
   .content-grid,

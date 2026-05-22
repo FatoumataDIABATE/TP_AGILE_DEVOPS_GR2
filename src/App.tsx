@@ -74,6 +74,8 @@ function App() {
   const [creating, setCreating] = useState(false)
   const [deletingEventId, setDeletingEventId] = useState<number | null>(null)
   const [editingEventId, setEditingEventId] = useState<number | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterDate, setFilterDate] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [adminSuccess, setAdminSuccess] = useState<string | null>(null)
@@ -349,6 +351,31 @@ function App() {
   const nextEvent = events[0]
   const selectedEvent = events.find((eventItem) => String(eventItem.id) === form.eventId)
 
+  const displayedEvents = events.filter((eventItem) => {
+    const q = searchQuery.trim().toLowerCase()
+
+    if (q) {
+      const hay = `${eventItem.title} ${eventItem.description} ${eventItem.location} ${eventItem.category}`.toLowerCase()
+      if (!hay.includes(q)) {
+        return false
+      }
+    }
+
+    if (filterDate) {
+      try {
+        const target = new Date(filterDate).toISOString().slice(0, 10)
+        const ev = new Date(eventItem.startsAt).toISOString().slice(0, 10)
+        if (ev !== target) {
+          return false
+        }
+      } catch {
+        // ignore invalid date filter
+      }
+    }
+
+    return true
+  })
+
   if (route === 'admin') {
     return (
       <main className="app-shell">
@@ -463,9 +490,31 @@ function App() {
             {!loading && events.length === 0 ? (
               <p className="muted">Aucun événement n’est encore publié.</p>
             ) : null}
+            {!loading && events.length > 0 ? (
+              <>
+                <div className="search-controls">
+                  <input
+                    placeholder="Rechercher par mot-clé (titre, description, lieu, catégorie)"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <input
+                    type="date"
+                    value={filterDate}
+                    onChange={(e) => setFilterDate(e.target.value)}
+                    aria-label="Filtrer par date"
+                  />
+                  <button type="button" className="secondary-button" onClick={() => { setSearchQuery(''); setFilterDate('') }}>
+                    Réinitialiser
+                  </button>
+                </div>
 
-            <div className="event-list">
-              {events.map((eventItem) => (
+                {displayedEvents.length === 0 ? (
+                  <p className="muted">Aucun événement ne correspond aux filtres.</p>
+                ) : null}
+
+                <div className="event-list">
+                  {displayedEvents.map((eventItem) => (
                 <article
                   key={eventItem.id}
                   className={`event-card${editingEventId === eventItem.id ? ' event-card--active' : ''}`}
@@ -500,6 +549,8 @@ function App() {
                 </article>
               ))}
             </div>
+              </>
+            ) : null}
           </section>
         </section>
       </main>
@@ -597,7 +648,7 @@ function App() {
               Choisir un événement
               <select name="eventId" value={form.eventId} onChange={handleChange} required>
                 <option value="">Sélectionne un événement</option>
-                {events.map((eventItem) => (
+                {displayedEvents.map((eventItem) => (
                   <option key={eventItem.id} value={eventItem.id}>
                     {eventItem.title} - {dateFormatter.format(new Date(eventItem.startsAt))}
                   </option>
@@ -629,11 +680,28 @@ function App() {
           </button>
         </form>
 
-        <section className="panel list-panel">
+          <section className="panel list-panel">
           <div className="section-heading">
             <span className="eyebrow">Événements</span>
             <h2>À venir</h2>
           </div>
+
+            <div className="search-controls">
+              <input
+                placeholder="Rechercher par mot-clé (titre, description, lieu, catégorie)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                aria-label="Filtrer par date"
+              />
+              <button type="button" className="secondary-button" onClick={() => { setSearchQuery(''); setFilterDate('') }}>
+                Réinitialiser
+              </button>
+            </div>
 
           {loading ? <p className="muted">Chargement des événements...</p> : null}
           {!loading && events.length === 0 ? (
@@ -641,7 +709,7 @@ function App() {
           ) : null}
 
           <div className="event-list">
-            {events.map((eventItem) => (
+            {displayedEvents.map((eventItem) => (
               <article key={eventItem.id} className="event-card">
                 <div className="event-card__header">
                   <span>{eventItem.category}</span>
