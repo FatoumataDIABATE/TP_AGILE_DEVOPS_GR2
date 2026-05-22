@@ -49,6 +49,19 @@ const dateFormatter = new Intl.DateTimeFormat('fr-FR', {
   timeStyle: 'short',
 })
 
+function toDatetimeLocalValue(value: string) {
+  const date = new Date(value)
+  const offset = date.getTimezoneOffset() * 60000
+
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
+}
+
+function sortEvents(eventsList: EventItem[]) {
+  return [...eventsList].sort(
+    (left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime(),
+  )
+}
+
 function App() {
   const [events, setEvents] = useState<EventItem[]>([])
   const [form, setForm] = useState<RegistrationForm>(initialForm)
@@ -59,13 +72,11 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [deletingEventId, setDeletingEventId] = useState<number | null>(null)
+  const [editingEventId, setEditingEventId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [adminSuccess, setAdminSuccess] = useState<string | null>(null)
-
-  useEffect(() => {
-    void loadEvents()
-  }, [])
 
   useEffect(() => {
     const handlePopState = () => {
@@ -87,28 +98,48 @@ function App() {
     setRoute(pathname === '/admin' ? 'admin' : 'visitor')
   }
 
-  async function loadEvents() {
-    try {
-      setLoading(true)
-      const response = await fetch(`${apiBase}/api/events`)
+  useEffect(() => {
+    let active = true
 
-      if (!response.ok) {
-        throw new Error('Impossible de charger les événements')
+    async function fetchEvents() {
+      try {
+        const response = await fetch(`${apiBase}/api/events`)
+
+        if (!response.ok) {
+          throw new Error('Impossible de charger les événements')
+        }
+
+        const data = (await response.json()) as EventItem[]
+
+        if (!active) {
+          return
+        }
+
+        setEvents(sortEvents(data))
+        setError(null)
+      } catch (caughtError) {
+        if (!active) {
+          return
+        }
+
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : 'Une erreur inattendue est survenue',
+        )
+      } finally {
+        if (active) {
+          setLoading(false)
+        }
       }
-
-      const data = (await response.json()) as EventItem[]
-      setEvents(data)
-      setError(null)
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : 'Une erreur inattendue est survenue',
-      )
-    } finally {
-      setLoading(false)
     }
-  }
+
+    void fetchEvents()
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   function handleChange(
     event: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
@@ -128,6 +159,26 @@ function App() {
       ...currentForm,
       [name]: value,
     }))
+  }
+
+  function startEditingEvent(eventItem: EventItem) {
+    setEditingEventId(eventItem.id)
+    setEventForm({
+      title: eventItem.title,
+      description: eventItem.description,
+      startsAt: toDatetimeLocalValue(eventItem.startsAt),
+      location: eventItem.location,
+      category: eventItem.category,
+    })
+    setAdminSuccess(null)
+    setError(null)
+  }
+
+  function cancelEditingEvent() {
+    setEditingEventId(null)
+    setEventForm(initialEventForm)
+    setAdminSuccess(null)
+    setError(null)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -199,8 +250,13 @@ function App() {
       setError(null)
       setAdminSuccess(null)
 
-      const response = await fetch(`${apiBase}/api/events`, {
-        method: 'POST',
+      const isEditing = editingEventId !== null
+      const endpoint = isEditing
+        ? `${apiBase}/api/events/${editingEventId}`
+        : `${apiBase}/api/events`
+
+      const response = await fetch(endpoint, {
+        method: isEditing ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -219,11 +275,22 @@ function App() {
       }
 
       const createdEvent = (await response.json()) as EventItem
-      setEvents((currentEvents) => [...currentEvents, createdEvent].sort((left, right) =>
-        new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime(),
-      ))
+      setEvents((currentEvents) =>
+        sortEvents(
+          isEditing
+            ? currentEvents.map((currentEvent) =>
+                currentEvent.id === createdEvent.id ? createdEvent : currentEvent,
+              )
+            : [...currentEvents, createdEvent],
+        ),
+      )
       setEventForm(initialEventForm)
-      setAdminSuccess(`Événement créé: ${createdEvent.title}`)
+      setEditingEventId(null)
+      setAdminSuccess(
+        isEditing
+          ? `Événement mis à jour: ${createdEvent.title}`
+          : `Événement créé: ${createdEvent.title}`,
+      )
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -232,6 +299,50 @@ function App() {
       )
     } finally {
       setCreating(false)
+    }
+  }
+
+  async function handleDeleteEvent(eventItem: EventItem) {
+    const confirmed = window.confirm(
+      `Supprimer l’événement « ${eventItem.title} » ? Cette action est irréversible.`,
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setDeletingEventId(eventItem.id)
+      setError(null)
+      setAdminSuccess(null)
+
+      const response = await fetch(`${apiBase}/api/events/${eventItem.id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok && response.status !== 204) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+
+        throw new Error(payload?.error ?? 'Impossible de supprimer l’événement')
+      }
+
+      setEvents((currentEvents) => currentEvents.filter((currentEvent) => currentEvent.id !== eventItem.id))
+
+      if (editingEventId === eventItem.id) {
+        cancelEditingEvent()
+      }
+
+      setAdminSuccess(`Événement supprimé: ${eventItem.title}`)
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Une erreur inattendue est survenue',
+      )
+    } finally {
+      setDeletingEventId(null)
     }
   }
 
@@ -244,10 +355,10 @@ function App() {
         <section className="hero-panel">
           <div className="hero-copy">
             <span className="eyebrow">Espace admin</span>
-            <h1>Créer un événement</h1>
+            <h1>Créer, modifier ou supprimer un événement</h1>
             <p>
-              Cette page permet à l’administrateur d’ajouter un nouvel événement publié ensuite
-              sur la page visiteur.
+              Cette page permet à l’administrateur d’ajouter un nouvel événement, de mettre à
+              jour un événement existant ou de le supprimer.
             </p>
             <div className="page-actions">
               <button type="button" className="secondary-button" onClick={() => navigateTo('/')}>
@@ -257,11 +368,14 @@ function App() {
           </div>
         </section>
 
-        <section className="content-grid single-column">
+        <section className="content-grid">
           <form className="panel form-panel" onSubmit={handleAdminSubmit}>
             <div className="section-heading">
               <span className="eyebrow">Admin</span>
-              <h2>Publier un nouvel événement</h2>
+              <h2>{editingEventId ? 'Modifier l’événement' : 'Publier un nouvel événement'}</h2>
+              {editingEventId ? (
+                <p className="muted">Tu modifies l’événement sélectionné dans la liste.</p>
+              ) : null}
             </div>
 
             <div className="form-grid">
@@ -321,10 +435,72 @@ function App() {
             {error ? <p className="error-box">{error}</p> : null}
             {adminSuccess ? <p className="success-box">{adminSuccess}</p> : null}
 
-            <button type="submit" className="primary-button" disabled={creating}>
-              {creating ? 'Création...' : 'Créer l’événement'}
-            </button>
+            <div className="form-actions">
+              <button type="submit" className="primary-button" disabled={creating}>
+                {creating
+                  ? editingEventId
+                    ? 'Mise à jour...'
+                    : 'Création...'
+                  : editingEventId
+                    ? 'Mettre à jour l’événement'
+                    : 'Créer l’événement'}
+              </button>
+              {editingEventId ? (
+                <button type="button" className="secondary-button" onClick={cancelEditingEvent}>
+                  Annuler la modification
+                </button>
+              ) : null}
+            </div>
           </form>
+
+          <section className="panel list-panel">
+            <div className="section-heading">
+              <span className="eyebrow">Gestion</span>
+              <h2>Événements existants</h2>
+            </div>
+
+            {loading ? <p className="muted">Chargement des événements...</p> : null}
+            {!loading && events.length === 0 ? (
+              <p className="muted">Aucun événement n’est encore publié.</p>
+            ) : null}
+
+            <div className="event-list">
+              {events.map((eventItem) => (
+                <article
+                  key={eventItem.id}
+                  className={`event-card${editingEventId === eventItem.id ? ' event-card--active' : ''}`}
+                >
+                  <div className="event-card__header">
+                    <span>{eventItem.category}</span>
+                    <strong>{dateFormatter.format(new Date(eventItem.startsAt))}</strong>
+                  </div>
+                  <h3>{eventItem.title}</h3>
+                  <p>{eventItem.description}</p>
+                  <footer>
+                    <span>{eventItem.location}</span>
+                    <small>{eventItem.registrationsCount} inscrit(s)</small>
+                  </footer>
+                  <div className="event-card__actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => startEditingEvent(eventItem)}
+                    >
+                      Modifier
+                    </button>
+                    <button
+                      type="button"
+                      className="danger-button"
+                      disabled={deletingEventId === eventItem.id}
+                      onClick={() => handleDeleteEvent(eventItem)}
+                    >
+                      {deletingEventId === eventItem.id ? 'Suppression...' : 'Supprimer'}
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
         </section>
       </main>
     )
