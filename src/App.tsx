@@ -26,7 +26,20 @@ type EventForm = {
   category: string
 }
 
+type RegistrationItem = {
+  id: number
+  eventId: number
+  fullName: string
+  email: string
+  createdAt: string
+}
+
 type Route = 'visitor' | 'admin'
+
+type LoginForm = {
+  email: string
+  password: string
+}
 
 const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
@@ -42,6 +55,11 @@ const initialEventForm: EventForm = {
   startsAt: '',
   location: '',
   category: 'Conférence',
+}
+
+const initialLoginForm: LoginForm = {
+  email: '',
+  password: '',
 }
 
 const dateFormatter = new Intl.DateTimeFormat('fr-FR', {
@@ -74,11 +92,24 @@ function App() {
   const [creating, setCreating] = useState(false)
   const [deletingEventId, setDeletingEventId] = useState<number | null>(null)
   const [editingEventId, setEditingEventId] = useState<number | null>(null)
+  const [selectedRegistrationsEventId, setSelectedRegistrationsEventId] = useState<number | null>(
+    null,
+  )
+  const [selectedRegistrations, setSelectedRegistrations] = useState<RegistrationItem[]>([])
+  const [loadingRegistrationsEventId, setLoadingRegistrationsEventId] = useState<number | null>(
+    null,
+  )
   const [searchQuery, setSearchQuery] = useState('')
   const [filterDate, setFilterDate] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [adminSuccess, setAdminSuccess] = useState<string | null>(null)
+  const [authToken, setAuthToken] = useState<string | null>(() =>
+    window.localStorage.getItem('adminToken'),
+  )
+  const [loginForm, setLoginForm] = useState<LoginForm>(initialLoginForm)
+  const [loginError, setLoginError] = useState<string | null>(null)
+  const [loggingIn, setLoggingIn] = useState(false)
 
   useEffect(() => {
     const handlePopState = () => {
@@ -98,6 +129,73 @@ function App() {
     }
 
     setRoute(pathname === '/admin' ? 'admin' : 'visitor')
+  }
+
+  function authHeaders(): Record<string, string> {
+    if (!authToken) {
+      return {}
+    }
+
+    return {
+      Authorization: `Bearer ${authToken}`,
+    }
+  }
+
+  function clearAuth() {
+    setAuthToken(null)
+    window.localStorage.removeItem('adminToken')
+    setLoginError(null)
+    setLoginForm(initialLoginForm)
+    if (window.location.pathname === '/admin') {
+      navigateTo('/')
+    }
+  }
+
+  async function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setLoggingIn(true)
+    setLoginError(null)
+
+    try {
+      const response = await fetch(`${apiBase}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: loginForm.email.trim().toLowerCase(),
+          password: loginForm.password,
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+
+        throw new Error(payload?.error ?? 'Impossible de s’authentifier')
+      }
+
+      const payload = (await response.json()) as { token: string }
+      window.localStorage.setItem('adminToken', payload.token)
+      setAuthToken(payload.token)
+      setLoginForm(initialLoginForm)
+      setLoginError(null)
+      navigateTo('/admin')
+    } catch (caughtError) {
+      setLoginError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Une erreur inattendue est survenue',
+      )
+    } finally {
+      setLoggingIn(false)
+    }
+  }
+
+  function handleUnauthorized() {
+    clearAuth()
+    setError('La session a expiré, reconnecte-toi pour accéder à l’espace admin.')
   }
 
   useEffect(() => {
@@ -183,6 +281,54 @@ function App() {
     setError(null)
   }
 
+  async function handleShowRegistrations(eventItem: EventItem) {
+    try {
+      setLoadingRegistrationsEventId(eventItem.id)
+      setError(null)
+      setAdminSuccess(null)
+
+      const response = await fetch(`${apiBase}/api/events/${eventItem.id}/registrations`, {
+        headers: {
+          ...authHeaders(),
+        },
+      })
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          handleUnauthorized()
+          return
+        }
+
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+
+        throw new Error(payload?.error ?? 'Impossible de lire les inscrits')
+      }
+
+      const payload = (await response.json()) as {
+        event: EventItem
+        registrations: RegistrationItem[]
+      }
+
+      setSelectedRegistrationsEventId(payload.event.id)
+      setSelectedRegistrations(payload.registrations)
+      setAdminSuccess(
+        payload.registrations.length > 0
+          ? `${payload.registrations.length} inscrit(s) pour ${payload.event.title}`
+          : `Aucun inscrit pour ${payload.event.title}`,
+      )
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Une erreur inattendue est survenue',
+      )
+    } finally {
+      setLoadingRegistrationsEventId(null)
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -261,6 +407,7 @@ function App() {
         method: isEditing ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...authHeaders(),
         },
         body: JSON.stringify({
           ...eventForm,
@@ -269,6 +416,11 @@ function App() {
       })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          handleUnauthorized()
+          return
+        }
+
         const payload = (await response.json().catch(() => null)) as
           | { error?: string }
           | null
@@ -320,9 +472,17 @@ function App() {
 
       const response = await fetch(`${apiBase}/api/events/${eventItem.id}`, {
         method: 'DELETE',
+        headers: {
+          ...authHeaders(),
+        },
       })
 
       if (!response.ok && response.status !== 204) {
+        if (response.status === 401) {
+          handleUnauthorized()
+          return
+        }
+
         const payload = (await response.json().catch(() => null)) as
           | { error?: string }
           | null
@@ -331,6 +491,11 @@ function App() {
       }
 
       setEvents((currentEvents) => currentEvents.filter((currentEvent) => currentEvent.id !== eventItem.id))
+
+      if (selectedRegistrationsEventId === eventItem.id) {
+        setSelectedRegistrationsEventId(null)
+        setSelectedRegistrations([])
+      }
 
       if (editingEventId === eventItem.id) {
         cancelEditingEvent()
@@ -350,6 +515,7 @@ function App() {
 
   const nextEvent = events[0]
   const selectedEvent = events.find((eventItem) => String(eventItem.id) === form.eventId)
+  const selectedAdminEvent = events.find((eventItem) => eventItem.id === selectedRegistrationsEventId)
 
   const displayedEvents = events.filter((eventItem) => {
     const q = searchQuery.trim().toLowerCase()
@@ -377,6 +543,77 @@ function App() {
   })
 
   if (route === 'admin') {
+    if (!authToken) {
+      return (
+        <main className="app-shell">
+          <section className="hero-panel">
+            <div className="hero-copy">
+              <span className="eyebrow">Authentification requise</span>
+              <h1>Accès administrateur</h1>
+              <p>Connecte-toi avec ton compte administrateur pour accéder à l’espace admin.</p>
+              <div className="page-actions">
+                <button type="button" className="secondary-button" onClick={() => navigateTo('/')}>
+                  Retour à la page visiteur
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="content-grid">
+            <form className="panel form-panel" onSubmit={handleLoginSubmit}>
+              <div className="section-heading">
+                <span className="eyebrow">Connexion</span>
+                <h2>Identifiant administrateur</h2>
+              </div>
+
+              <div className="form-grid">
+                <label>
+                  Adresse email
+                  <input
+                    type="email"
+                    name="email"
+                    value={loginForm.email}
+                    onChange={(event) =>
+                      setLoginForm((current) => ({
+                        ...current,
+                        email: event.target.value,
+                      }))
+                    }
+                    placeholder="admin@events.local"
+                    required
+                  />
+                </label>
+                <label>
+                  Mot de passe
+                  <input
+                    type="password"
+                    name="password"
+                    value={loginForm.password}
+                    onChange={(event) =>
+                      setLoginForm((current) => ({
+                        ...current,
+                        password: event.target.value,
+                      }))
+                    }
+                    placeholder="••••••••••"
+                    required
+                  />
+                </label>
+              </div>
+
+              {loginError ? <p className="error-box">{loginError}</p> : null}
+
+              <div className="form-actions">
+                <button type="submit" className="primary-button" disabled={loggingIn}>
+                  {loggingIn ? 'Connexion...' : 'Se connecter'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </main>
+      )
+    }
+
     return (
       <main className="app-shell">
         <section className="hero-panel">
@@ -390,6 +627,9 @@ function App() {
             <div className="page-actions">
               <button type="button" className="secondary-button" onClick={() => navigateTo('/')}>
                 Retour à la page visiteur
+              </button>
+              <button type="button" className="secondary-button" onClick={clearAuth}>
+                Déconnexion
               </button>
             </div>
           </div>
@@ -539,6 +779,14 @@ function App() {
                     </button>
                     <button
                       type="button"
+                      className="secondary-button"
+                      onClick={() => handleShowRegistrations(eventItem)}
+                      disabled={loadingRegistrationsEventId === eventItem.id}
+                    >
+                      {loadingRegistrationsEventId === eventItem.id ? 'Chargement...' : 'Voir inscrits'}
+                    </button>
+                    <button
+                      type="button"
                       className="danger-button"
                       disabled={deletingEventId === eventItem.id}
                       onClick={() => handleDeleteEvent(eventItem)}
@@ -549,6 +797,31 @@ function App() {
                 </article>
               ))}
             </div>
+
+                {selectedAdminEvent ? (
+                  <section className="registrations-panel">
+                    <div className="section-heading">
+                      <span className="eyebrow">Inscriptions</span>
+                      <h3>{selectedAdminEvent.title}</h3>
+                      <p className="muted">
+                        {selectedRegistrations.length > 0
+                          ? `${selectedRegistrations.length} personne(s) inscrite(s)`
+                          : 'Aucune inscription pour cet événement.'}
+                      </p>
+                    </div>
+
+                    {selectedRegistrations.length > 0 ? (
+                      <ul className="registration-list">
+                        {selectedRegistrations.map((registration) => (
+                          <li key={registration.id}>
+                            <strong>{registration.fullName}</strong>
+                            <span>{registration.email}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </section>
+                ) : null}
               </>
             ) : null}
           </section>

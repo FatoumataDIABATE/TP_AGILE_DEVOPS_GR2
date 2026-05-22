@@ -1,3 +1,14 @@
+CREATE TABLE IF NOT EXISTS administrators (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+INSERT OR IGNORE INTO administrators (email, password_hash)
+VALUES
+  ('admin@events.local', '3b23e7240a49088d0670e864023eb557c5669967cc773ca0e6f9373af7fa5712');
+
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
