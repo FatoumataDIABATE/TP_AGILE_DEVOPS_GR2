@@ -26,6 +26,14 @@ type EventForm = {
   category: string
 }
 
+type RegistrationItem = {
+  id: number
+  eventId: number
+  fullName: string
+  email: string
+  createdAt: string
+}
+
 type Route = 'visitor' | 'admin'
 
 const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
@@ -74,6 +82,13 @@ function App() {
   const [creating, setCreating] = useState(false)
   const [deletingEventId, setDeletingEventId] = useState<number | null>(null)
   const [editingEventId, setEditingEventId] = useState<number | null>(null)
+  const [selectedRegistrationsEventId, setSelectedRegistrationsEventId] = useState<number | null>(
+    null,
+  )
+  const [selectedRegistrations, setSelectedRegistrations] = useState<RegistrationItem[]>([])
+  const [loadingRegistrationsEventId, setLoadingRegistrationsEventId] = useState<number | null>(
+    null,
+  )
   const [searchQuery, setSearchQuery] = useState('')
   const [filterDate, setFilterDate] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -181,6 +196,45 @@ function App() {
     setEventForm(initialEventForm)
     setAdminSuccess(null)
     setError(null)
+  }
+
+  async function handleShowRegistrations(eventItem: EventItem) {
+    try {
+      setLoadingRegistrationsEventId(eventItem.id)
+      setError(null)
+      setAdminSuccess(null)
+
+      const response = await fetch(`${apiBase}/api/events/${eventItem.id}/registrations`)
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+
+        throw new Error(payload?.error ?? 'Impossible de lire les inscrits')
+      }
+
+      const payload = (await response.json()) as {
+        event: EventItem
+        registrations: RegistrationItem[]
+      }
+
+      setSelectedRegistrationsEventId(payload.event.id)
+      setSelectedRegistrations(payload.registrations)
+      setAdminSuccess(
+        payload.registrations.length > 0
+          ? `${payload.registrations.length} inscrit(s) pour ${payload.event.title}`
+          : `Aucun inscrit pour ${payload.event.title}`,
+      )
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Une erreur inattendue est survenue',
+      )
+    } finally {
+      setLoadingRegistrationsEventId(null)
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -332,6 +386,11 @@ function App() {
 
       setEvents((currentEvents) => currentEvents.filter((currentEvent) => currentEvent.id !== eventItem.id))
 
+      if (selectedRegistrationsEventId === eventItem.id) {
+        setSelectedRegistrationsEventId(null)
+        setSelectedRegistrations([])
+      }
+
       if (editingEventId === eventItem.id) {
         cancelEditingEvent()
       }
@@ -350,6 +409,7 @@ function App() {
 
   const nextEvent = events[0]
   const selectedEvent = events.find((eventItem) => String(eventItem.id) === form.eventId)
+  const selectedAdminEvent = events.find((eventItem) => eventItem.id === selectedRegistrationsEventId)
 
   const displayedEvents = events.filter((eventItem) => {
     const q = searchQuery.trim().toLowerCase()
@@ -539,6 +599,14 @@ function App() {
                     </button>
                     <button
                       type="button"
+                      className="secondary-button"
+                      onClick={() => handleShowRegistrations(eventItem)}
+                      disabled={loadingRegistrationsEventId === eventItem.id}
+                    >
+                      {loadingRegistrationsEventId === eventItem.id ? 'Chargement...' : 'Voir inscrits'}
+                    </button>
+                    <button
+                      type="button"
                       className="danger-button"
                       disabled={deletingEventId === eventItem.id}
                       onClick={() => handleDeleteEvent(eventItem)}
@@ -549,6 +617,31 @@ function App() {
                 </article>
               ))}
             </div>
+
+                {selectedAdminEvent ? (
+                  <section className="registrations-panel">
+                    <div className="section-heading">
+                      <span className="eyebrow">Inscriptions</span>
+                      <h3>{selectedAdminEvent.title}</h3>
+                      <p className="muted">
+                        {selectedRegistrations.length > 0
+                          ? `${selectedRegistrations.length} personne(s) inscrite(s)`
+                          : 'Aucune inscription pour cet événement.'}
+                      </p>
+                    </div>
+
+                    {selectedRegistrations.length > 0 ? (
+                      <ul className="registration-list">
+                        {selectedRegistrations.map((registration) => (
+                          <li key={registration.id}>
+                            <strong>{registration.fullName}</strong>
+                            <span>{registration.email}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </section>
+                ) : null}
               </>
             ) : null}
           </section>
