@@ -46,8 +46,9 @@ const adminPassword = process.env.ADMIN_PASSWORD ?? 'Admin@1234!'
 const adminPasswordHash = hashPassword(adminPassword)
 
 const insertAdmin = db.prepare(`
-  INSERT OR IGNORE INTO administrators (email, password_hash)
+  INSERT INTO administrators (email, password_hash)
   VALUES (?, ?)
+  ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash
 `)
 
 insertAdmin.run(adminEmail.toLowerCase(), adminPasswordHash)
