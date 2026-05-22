@@ -36,6 +36,11 @@ type RegistrationItem = {
 
 type Route = 'visitor' | 'admin'
 
+type LoginForm = {
+  email: string
+  password: string
+}
+
 const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 
 const initialForm: RegistrationForm = {
@@ -50,6 +55,11 @@ const initialEventForm: EventForm = {
   startsAt: '',
   location: '',
   category: 'Conférence',
+}
+
+const initialLoginForm: LoginForm = {
+  email: '',
+  password: '',
 }
 
 const dateFormatter = new Intl.DateTimeFormat('fr-FR', {
@@ -94,6 +104,12 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [adminSuccess, setAdminSuccess] = useState<string | null>(null)
+  const [authToken, setAuthToken] = useState<string | null>(() =>
+    window.localStorage.getItem('adminToken'),
+  )
+  const [loginForm, setLoginForm] = useState<LoginForm>(initialLoginForm)
+  const [loginError, setLoginError] = useState<string | null>(null)
+  const [loggingIn, setLoggingIn] = useState(false)
 
   useEffect(() => {
     const handlePopState = () => {
@@ -113,6 +129,73 @@ function App() {
     }
 
     setRoute(pathname === '/admin' ? 'admin' : 'visitor')
+  }
+
+  function authHeaders(): Record<string, string> {
+    if (!authToken) {
+      return {}
+    }
+
+    return {
+      Authorization: `Bearer ${authToken}`,
+    }
+  }
+
+  function clearAuth() {
+    setAuthToken(null)
+    window.localStorage.removeItem('adminToken')
+    setLoginError(null)
+    setLoginForm(initialLoginForm)
+    if (window.location.pathname === '/admin') {
+      navigateTo('/')
+    }
+  }
+
+  async function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setLoggingIn(true)
+    setLoginError(null)
+
+    try {
+      const response = await fetch(`${apiBase}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: loginForm.email.trim().toLowerCase(),
+          password: loginForm.password,
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null
+
+        throw new Error(payload?.error ?? 'Impossible de s’authentifier')
+      }
+
+      const payload = (await response.json()) as { token: string }
+      window.localStorage.setItem('adminToken', payload.token)
+      setAuthToken(payload.token)
+      setLoginForm(initialLoginForm)
+      setLoginError(null)
+      navigateTo('/admin')
+    } catch (caughtError) {
+      setLoginError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : 'Une erreur inattendue est survenue',
+      )
+    } finally {
+      setLoggingIn(false)
+    }
+  }
+
+  function handleUnauthorized() {
+    clearAuth()
+    setError('La session a expiré, reconnecte-toi pour accéder à l’espace admin.')
   }
 
   useEffect(() => {
@@ -204,9 +287,18 @@ function App() {
       setError(null)
       setAdminSuccess(null)
 
-      const response = await fetch(`${apiBase}/api/events/${eventItem.id}/registrations`)
+      const response = await fetch(`${apiBase}/api/events/${eventItem.id}/registrations`, {
+        headers: {
+          ...authHeaders(),
+        },
+      })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          handleUnauthorized()
+          return
+        }
+
         const payload = (await response.json().catch(() => null)) as
           | { error?: string }
           | null
@@ -315,6 +407,7 @@ function App() {
         method: isEditing ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...authHeaders(),
         },
         body: JSON.stringify({
           ...eventForm,
@@ -323,6 +416,11 @@ function App() {
       })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          handleUnauthorized()
+          return
+        }
+
         const payload = (await response.json().catch(() => null)) as
           | { error?: string }
           | null
@@ -374,9 +472,17 @@ function App() {
 
       const response = await fetch(`${apiBase}/api/events/${eventItem.id}`, {
         method: 'DELETE',
+        headers: {
+          ...authHeaders(),
+        },
       })
 
       if (!response.ok && response.status !== 204) {
+        if (response.status === 401) {
+          handleUnauthorized()
+          return
+        }
+
         const payload = (await response.json().catch(() => null)) as
           | { error?: string }
           | null
@@ -437,6 +543,77 @@ function App() {
   })
 
   if (route === 'admin') {
+    if (!authToken) {
+      return (
+        <main className="app-shell">
+          <section className="hero-panel">
+            <div className="hero-copy">
+              <span className="eyebrow">Authentification requise</span>
+              <h1>Accès administrateur</h1>
+              <p>Connecte-toi avec ton compte administrateur pour accéder à l’espace admin.</p>
+              <div className="page-actions">
+                <button type="button" className="secondary-button" onClick={() => navigateTo('/')}>
+                  Retour à la page visiteur
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="content-grid">
+            <form className="panel form-panel" onSubmit={handleLoginSubmit}>
+              <div className="section-heading">
+                <span className="eyebrow">Connexion</span>
+                <h2>Identifiant administrateur</h2>
+              </div>
+
+              <div className="form-grid">
+                <label>
+                  Adresse email
+                  <input
+                    type="email"
+                    name="email"
+                    value={loginForm.email}
+                    onChange={(event) =>
+                      setLoginForm((current) => ({
+                        ...current,
+                        email: event.target.value,
+                      }))
+                    }
+                    placeholder="admin@events.local"
+                    required
+                  />
+                </label>
+                <label>
+                  Mot de passe
+                  <input
+                    type="password"
+                    name="password"
+                    value={loginForm.password}
+                    onChange={(event) =>
+                      setLoginForm((current) => ({
+                        ...current,
+                        password: event.target.value,
+                      }))
+                    }
+                    placeholder="••••••••••"
+                    required
+                  />
+                </label>
+              </div>
+
+              {loginError ? <p className="error-box">{loginError}</p> : null}
+
+              <div className="form-actions">
+                <button type="submit" className="primary-button" disabled={loggingIn}>
+                  {loggingIn ? 'Connexion...' : 'Se connecter'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </main>
+      )
+    }
+
     return (
       <main className="app-shell">
         <section className="hero-panel">
@@ -450,6 +627,9 @@ function App() {
             <div className="page-actions">
               <button type="button" className="secondary-button" onClick={() => navigateTo('/')}>
                 Retour à la page visiteur
+              </button>
+              <button type="button" className="secondary-button" onClick={clearAuth}>
+                Déconnexion
               </button>
             </div>
           </div>
