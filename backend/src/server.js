@@ -44,6 +44,15 @@ const insertEvent = db.prepare(`
   INSERT INTO events (title, description, starts_at, location, category)
   VALUES (?, ?, ?, ?, ?)
 `)
+const updateEvent = db.prepare(`
+  UPDATE events
+  SET title = ?, description = ?, starts_at = ?, location = ?, category = ?
+  WHERE id = ?
+`)
+const deleteEvent = db.prepare(`
+  DELETE FROM events
+  WHERE id = ?
+`)
 const insertRegistration = db.prepare(`
   INSERT INTO registrations (event_id, full_name, email)
   VALUES (?, ?, ?)
@@ -112,6 +121,62 @@ app.post('/api/events', async (request, response) => {
     response.status(201).json(mapEvent(createdEvent))
   } catch (error) {
     response.status(500).json({ error: 'Impossible de créer l’événement' })
+  }
+})
+
+app.put('/api/events/:id', async (request, response) => {
+  const eventId = Number(request.params.id)
+
+  if (!Number.isInteger(eventId) || eventId <= 0) {
+    return response.status(400).json({ error: 'Identifiant d’événement invalide' })
+  }
+
+  const { title, description, startsAt, location, category } = request.body ?? {}
+
+  if (!title || !description || !startsAt || !location || !category) {
+    return response.status(400).json({ error: 'Tous les champs sont obligatoires' })
+  }
+
+  const startsAtDate = new Date(startsAt)
+
+  if (Number.isNaN(startsAtDate.getTime())) {
+    return response.status(400).json({ error: 'La date de début est invalide' })
+  }
+
+  const existingEvent = getEventById.get(eventId)
+
+  if (!existingEvent) {
+    return response.status(404).json({ error: 'Événement introuvable' })
+  }
+
+  try {
+    updateEvent.run(title, description, startsAtDate.toISOString(), location, category, eventId)
+    const updatedEvent = getEventById.get(eventId)
+
+    response.json(mapEvent(updatedEvent))
+  } catch (error) {
+    response.status(500).json({ error: 'Impossible de mettre à jour l’événement' })
+  }
+})
+
+app.delete('/api/events/:id', async (request, response) => {
+  const eventId = Number(request.params.id)
+
+  if (!Number.isInteger(eventId) || eventId <= 0) {
+    return response.status(400).json({ error: 'Identifiant d’événement invalide' })
+  }
+
+  const existingEvent = getEventById.get(eventId)
+
+  if (!existingEvent) {
+    return response.status(404).json({ error: 'Événement introuvable' })
+  }
+
+  try {
+    deleteEvent.run(eventId)
+    response.status(204).end()
+  } catch (error) {
+    response.status(500).json({ error: 'Impossible de supprimer l’événement' })
   }
 })
 

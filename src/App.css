@@ -261,6 +261,17 @@
   outline-offset: 2px;
 }
 
+.form-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.form-actions .secondary-button {
+  margin-top: 20px;
+}
+
 .single-column {
   grid-template-columns: 1fr;
 }
@@ -279,6 +290,11 @@
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.event-card--active {
+  border-color: rgba(158, 240, 209, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(158, 240, 209, 0.12);
 }
 
 .event-card__header {
@@ -311,6 +327,40 @@
   color: #7f8aa6;
 }
 
+.event-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.event-card__actions .secondary-button {
+  margin-top: 0;
+}
+
+.danger-button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 118, 140, 0.26);
+  background: rgba(255, 88, 114, 0.12);
+  color: #ffd3db;
+  font: inherit;
+  cursor: pointer;
+}
+
+.danger-button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.danger-button:focus-visible {
+  outline: 2px solid #ffd3db;
+  outline-offset: 2px;
+}
+
 @media (max-width: 980px) {
   .hero-panel,
   .content-grid,
@@ -329,6 +379,12 @@
   .event-card footer,
   .hero-card dl div {
     flex-direction: column;
+  }
+
+  .form-actions,
+  .event-card__actions {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .hero-card dd {
