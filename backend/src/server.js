@@ -62,6 +62,12 @@ const getRegistrationById = db.prepare(`
   FROM registrations
   WHERE id = ?
 `)
+const listRegistrationsByEventId = db.prepare(`
+  SELECT id, event_id, full_name, email, created_at
+  FROM registrations
+  WHERE event_id = ?
+  ORDER BY created_at ASC, id ASC
+`)
 
 app.use(cors())
 app.use(express.json())
@@ -177,6 +183,31 @@ app.delete('/api/events/:id', async (request, response) => {
     response.status(204).end()
   } catch (error) {
     response.status(500).json({ error: 'Impossible de supprimer l’événement' })
+  }
+})
+
+app.get('/api/events/:id/registrations', async (request, response) => {
+  const eventId = Number(request.params.id)
+
+  if (!Number.isInteger(eventId) || eventId <= 0) {
+    return response.status(400).json({ error: 'Identifiant d’événement invalide' })
+  }
+
+  const existingEvent = getEventById.get(eventId)
+
+  if (!existingEvent) {
+    return response.status(404).json({ error: 'Événement introuvable' })
+  }
+
+  try {
+    const registrations = listRegistrationsByEventId.all(eventId).map(mapRegistration)
+
+    response.json({
+      event: mapEvent(existingEvent),
+      registrations,
+    })
+  } catch (error) {
+    response.status(500).json({ error: 'Impossible de lire les inscriptions' })
   }
 })
 

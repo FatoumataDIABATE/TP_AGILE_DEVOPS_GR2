@@ -338,6 +338,42 @@
   margin-top: 0;
 }
 
+.registrations-panel {
+  margin-top: 20px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(158, 240, 209, 0.12);
+  background: rgba(8, 15, 27, 0.66);
+}
+
+.registration-list {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.registration-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.registration-list strong {
+  color: #f8fafc;
+}
+
+.registration-list span {
+  color: #cbd5e1;
+  word-break: break-word;
+}
+
 .danger-button {
   display: inline-flex;
   justify-content: center;
